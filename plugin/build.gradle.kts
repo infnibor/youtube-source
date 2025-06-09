@@ -12,7 +12,7 @@ lavalinkPlugin {
     name = "youtube-plugin"
     path = "dev.lavalink.youtube.plugin"
     apiVersion = libs.versions.lavalink
-    serverVersion = "4.0.7"
+    serverVersion = "4.1.1"
     configurePublishing = false
 }
 
@@ -37,7 +37,7 @@ java {
 }
 
 mavenPublishing {
-    coordinates("dev.lavalink.youtube", "youtube-plugin", version.toString())
+    coordinates("dev.infnibor.youtube", "youtube-plugin", version.toString())
     configure(JavaLibrary(JavadocJar.None(), sourcesJar = false))
 }
 

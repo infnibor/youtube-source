@@ -24,6 +24,7 @@ dependencies {
 }
 
 mavenPublishing {
+    coordinates("dev.infnibor.youtube", "v2", version.toString())
     configure(JavaLibrary(JavadocJar.Javadoc()))
 }
 

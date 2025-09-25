@@ -13,6 +13,7 @@ import com.sedmelluq.discord.lavaplayer.track.AudioReference;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackInfo;
 import dev.lavalink.youtube.UrlTools.UrlInfo;
+import dev.lavalink.youtube.cipher.LatestPlayerUrlFetcher;
 import dev.lavalink.youtube.cipher.SignatureCipherManager;
 import dev.lavalink.youtube.clients.*;
 import dev.lavalink.youtube.clients.skeleton.Client;
@@ -69,6 +70,7 @@ public class YoutubeAudioSourceManager implements AudioSourceManager {
     protected YoutubeHttpContextFilter contextFilter;
     protected YoutubeOauth2Handler oauth2Handler;
     protected SignatureCipherManager cipherManager;
+    protected LatestPlayerUrlFetcher playerUrlFetcher;
 
     public YoutubeAudioSourceManager() {
         this(true);
@@ -141,6 +143,7 @@ public class YoutubeAudioSourceManager implements AudioSourceManager {
             options.getCipherEndpoint(),
             options.getCipherBearerToken()
         );
+        this.playerUrlFetcher = new LatestPlayerUrlFetcher();
         this.oauth2Handler = new YoutubeOauth2Handler(httpInterfaceManager);
 
         contextFilter = new YoutubeHttpContextFilter();
@@ -430,6 +433,10 @@ public class YoutubeAudioSourceManager implements AudioSourceManager {
     @Override
     public void shutdown() {
         ExceptionTools.closeWithWarnings(httpInterfaceManager);
+    }
+
+    public LatestPlayerUrlFetcher getPlayerUrlFetcher() {
+        return playerUrlFetcher;
     }
 
     @FunctionalInterface

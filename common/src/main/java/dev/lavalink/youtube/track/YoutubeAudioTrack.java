@@ -17,6 +17,7 @@ import dev.lavalink.youtube.ClientInformation;
 import dev.lavalink.youtube.UrlTools;
 import dev.lavalink.youtube.UrlTools.UrlInfo;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
+import dev.lavalink.youtube.cipher.LatestPlayerUrlFetcher;
 import dev.lavalink.youtube.cipher.ScriptExtractionException;
 import dev.lavalink.youtube.clients.skeleton.Client;
 import dev.lavalink.youtube.track.format.StreamFormat;
@@ -204,27 +205,33 @@ public class YoutubeAudioTrack extends DelegatedAudioTrack {
   @NotNull
   private FormatWithUrl loadBestFormatWithUrl(@NotNull HttpInterface httpInterface,
                                               @NotNull Client client) throws CannotBeLoaded, Exception {
-    if (!client.supportsFormatLoading()) {
-      throw new RuntimeException(client.getIdentifier() + " does not support loading of formats!");
+        if (!client.supportsFormatLoading()) {
+            throw new RuntimeException(client.getIdentifier() + " does not support loading of formats!");
+        }
+
+        TrackFormats formats = client.loadFormats(sourceManager, httpInterface, getIdentifier());
+
+        if (formats == null) {
+            throw new FriendlyException("This video cannot be played", Severity.SUSPICIOUS, null);
+        }
+
+        StreamFormat format = formats.getBestFormat();
+
+        URI resolvedUrl = format.getUrl();
+        if (client.requirePlayerScript()) {
+            String playerUrl;
+            try {
+                playerUrl = sourceManager.getPlayerUrlFetcher().fetchLatestPlayerUrl();
+            } catch (IOException e) {
+                throw new FriendlyException("Failed to fetch latest YouTube player URL", Severity.SUSPICIOUS, e);
+            }
+            resolvedUrl = sourceManager.getCipherManager()
+                    .resolveFormatUrl(httpInterface, playerUrl, format, getIdentifier());
+            resolvedUrl = client.transformPlaybackUri(format.getUrl(), resolvedUrl);
+        }
+
+        return new FormatWithUrl(format, resolvedUrl);
     }
-
-    TrackFormats formats = client.loadFormats(sourceManager, httpInterface, getIdentifier());
-
-    if (formats == null) {
-      throw new FriendlyException("This video cannot be played", Severity.SUSPICIOUS, null);
-    }
-
-    StreamFormat format = formats.getBestFormat();
-
-    URI resolvedUrl = format.getUrl();
-    if (client.requirePlayerScript()) {
-      resolvedUrl = sourceManager.getCipherManager()
-              .resolveFormatUrl(httpInterface, formats.getPlayerScriptUrl(), format, getIdentifier());
-      resolvedUrl = client.transformPlaybackUri(format.getUrl(), resolvedUrl);
-    }
-
-    return new FormatWithUrl(format, resolvedUrl);
-  }
 
   @Override
   protected AudioTrack makeShallowClone() {

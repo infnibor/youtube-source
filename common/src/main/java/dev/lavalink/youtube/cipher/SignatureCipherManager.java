@@ -50,42 +50,50 @@ public class SignatureCipherManager {
 
   private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("(signatureTimestamp|sts):(\\d+)");
 
+  // Dodano let|const oraz nieco szerszy dopuszczalny zakres wartości (pozostawiono oryginalne alternatywy)
   private static final Pattern GLOBAL_VARS_PATTERN = Pattern.compile(
-      "('use\\s*strict';)?" +
-          "(?<code>var\\s*(?<varname>[a-zA-Z0-9_$]+)\\s*=\\s*" +
-          "(?<value>(?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')" +
-          "\\.split\\((?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')\\)" +
-          "|\\[(?:(?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')\\s*,?\\s*)*\\]" +
-          "|\"[^\"]*\"\\.split\\(\"[^\"]*\"\\)))"
+          "(?:'use\\s+strict';)?(?<code>(?:var|let|const)\\s*(?<varname>[A-Za-z0-9_$]+)\\s*=\\s*(?:'[^']+'|\"[^\"]+\")\\.split\\((?:\"\"|'')\\))"
+
+
   );
 
+  // Zmieniono: var -> (?:var|let|const) oraz >=3 funkcje (co najmniej 3) w obiekcie; dopuszczono opcjonalną średnik
   private static final Pattern ACTIONS_PATTERN = Pattern.compile(
-      "var\\s+([$A-Za-z0-9_]+)\\s*=\\s*\\{" +
-          "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*," +
-          "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*," +
-          "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*};");
-
-  private static final Pattern SIG_FUNCTION_PATTERN = Pattern.compile(
-      "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{\\s*return\\s*(" + VARIABLE_PART + ")\\(([^)]*)\\);?\\s*\\}"
-  );
-
-  private static final Pattern N_FUNCTION_PATTERN = Pattern.compile(
-      "function\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{" +
-          "var\\s*(" + VARIABLE_PART + ")=\\1\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)" +
-          ".*?catch\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
-          "\\s*return.*?\\+\\s*\\1\\s*}" +
-          "\\s*return\\s*\\2\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)};",
+      "(?:var|let|const)\\s+([$A-Za-z0-9_]+)\\s*=\\s*\\{" +
+          "(?:\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{.*?}\\s*,){2,}" +
+          "\\s*" + VARIABLE_PART_OBJECT_DECLARATION + "\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{.*?}\\s*};?",
       Pattern.DOTALL
   );
 
-  // old?
-  private static final Pattern functionPatternOld = Pattern.compile(
-      "function\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
-          "var\\s*(\\w+)=\\1\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)" +
+  // Rozszerzony wzorzec: delegujący (return innej funkcji), inline split/join, lub prosty return parametru
+  private static final Pattern SIG_FUNCTION_PATTERN = Pattern.compile(
+      "(" +
+          "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*" + VARIABLE_PART + "(?:\\s*,[^)]*)?\\)\\s*\\{\\s*return\\s*" + VARIABLE_PART + "\\([^)]*\\);?\\s*\\}" +
+      ")|(" +
+          "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*(" + VARIABLE_PART + ")(?:\\s*,[^)]*)?\\)\\s*\\{[^{}]*?\\3=\\3\\.split\\(\\\"\\\"\\);.*?return\\s+\\3\\.join\\(\\\"\\\"\\)\\s*;?\\}" +
+      ")|(" +
+          "function(?:\\s+" + VARIABLE_PART + ")?\\s*\\(\\s*(" + VARIABLE_PART + ")(?:\\s*,[^)]*)?\\)\\s*\\{[^{}]*?return\\s+\\5\\s*;?\\}" +
+      ")",
+      Pattern.DOTALL
+  );
+
+  // N function: dopuszczono opcjonalną nazwę oraz let|const
+  private static final Pattern N_FUNCTION_PATTERN = Pattern.compile(
+      "function(?:\\s+" + VARIABLE_PART + ")?\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{" +
+          "(?:var|let|const)\\s*(" + VARIABLE_PART + ")=\\1\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)" +
           ".*?catch\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
           "\\s*return.*?\\+\\s*\\1\\s*}" +
-          "\\s*return\\s*\\2\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)};",
-      Pattern.DOTALL);
+          "\\s*return\\s*\\2\\[" + VARIABLE_PART + "\\[\\d+\\]\\]\\(" + VARIABLE_PART + "\\[\\d+\\]\\)\\};",
+      Pattern.DOTALL
+  );
+
+  // Bardziej liberalny fallback dla n funkcji: szukamy funkcji z try/catch i zwrotem z dodaniem zmiennej z catch lub parametru
+  private static final Pattern N_FUNCTION_FALLBACK_PATTERN = Pattern.compile(
+      "function(?:\\s+" + VARIABLE_PART + ")?\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{" +
+          ".*?try\\{.*?\\}catch\\(\\s*(" + VARIABLE_PART + ")\\s*\\)\\s*\\{\\s*return[^}]*?\\+\\s*(?:\\1|\\2)[^}]*?\\}" +
+          ".*?return[^}]*?\\};",
+      Pattern.DOTALL
+  );
 
   private final ConcurrentMap<String, SignatureCipher> cipherCache;
   private final Set<String> dumpedScriptUrls;
@@ -129,13 +137,26 @@ public class SignatureCipherManager {
         uri.setParameter(format.getSignatureKey(), cipher.apply(signature, scriptEngine));
       } catch (ScriptException | NoSuchMethodException e) {
         dumpProblematicScript(cipherCache.get(playerScript).rawScript, playerScript, "Can't transform s parameter " + signature);
+        // Fallback: użyj oryginalnego signature aby zachować je w URL (diagnostyka, zgodnie z podejściem dla parametru n)
+        try {
+          uri.setParameter(format.getSignatureKey(), signature);
+          log.debug("Falling back to original signature parameter (untransformed) for script {}", playerScript);
+        } catch (Exception ignored) {
+          // Brak lepszej opcji jeśli ustawienie również się nie uda.
+        }
       }
     }
       
 
     if (!DataFormatTools.isNullOrEmpty(nParameter)) {
+      String transformed = null;
+      String primaryResult = null; // zapisz wynik pierwszej próby
+      boolean primaryAttempted = false;
+      boolean primaryFailed = false;
       try {
-        String transformed = cipher.transform(nParameter, scriptEngine);
+        transformed = cipher.transform(nParameter, scriptEngine);
+        primaryAttempted = true;
+        primaryResult = transformed;
         String logMessage = null;
 
         if (transformed == null) {
@@ -149,13 +170,48 @@ public class SignatureCipherManager {
         if (logMessage != null) {
             log.warn("{} (in: {}, out: {}, player script: {}, source version: {})",
                 logMessage, nParameter, transformed, playerScript, YoutubeSource.VERSION);
+        } else if (log.isDebugEnabled()) {
+            log.debug("n parameter primary transform success (script: {}, in: {}, out: {})", playerScript, nParameter, transformed);
         }
-
-        uri.setParameter("n", transformed);
       } catch (ScriptException | NoSuchMethodException e) {
-        // URLs can still be played without a resolved n parameter. It just means they're
-        // throttled. But we shouldn't throw an exception anyway as it's not really fatal.
+        primaryFailed = true;
         dumpProblematicScript(cipherCache.get(playerScript).rawScript, playerScript, "Can't transform n parameter " + nParameter + " with " + cipher.nFunction + " n function");
+        log.debug("Primary n transformation threw exception: {} - attempting NParamTransformer fallback", e.toString());
+      }
+
+      // Fallback lub poprawa jeśli primary dała wynik nieużyteczny
+      boolean needFallback = primaryFailed || transformed == null || nParameter.equals(transformed) ||
+          (transformed != null && (transformed.startsWith("enhanced_except_") || transformed.endsWith("_w8_" + nParameter)));
+
+      if (needFallback) {
+        try {
+          NParamTransformer fallbackTransformer = new NParamTransformer(cipher.rawScript);
+          String fallback = fallbackTransformer.transform(nParameter);
+          if (fallback != null && !fallback.equals(nParameter) && !fallback.equals(transformed)) {
+            log.info("n parameter improved via NParamTransformer fallback (in: {}, primary: {}, fallback: {})", nParameter, transformed, fallback);
+            transformed = fallback;
+          } else {
+            log.debug("Fallback NParamTransformer didn't improve result (primaryFailed={}, primaryAttempted={}, resultPrimary={}, resultFallback={})", primaryFailed, primaryAttempted, transformed, fallback);
+          }
+        } catch (Exception fe) {
+          log.debug("Fallback NParamTransformer failed: {}", fe.toString());
+        }
+      }
+
+      // Log końcowy – zawsze wypisz finalny wynik (primary vs final) aby zobaczyć co trafia do URL
+      if (log.isInfoEnabled()) {
+        log.info("n parameter final (script: {}, original: {}, primary: {}, final: {})", playerScript, nParameter, primaryResult, transformed != null ? transformed : nParameter);
+      }
+
+      try {
+        // Jeśli nadal null – zostaw oryginalny param n (throttling jest możliwy, ale URL będzie działał)
+        uri.setParameter("n", transformed != null ? transformed : nParameter);
+      } catch (Exception ignored) {
+        try {
+          uri.setParameter("n", nParameter);
+        } catch (Exception ignored2) {
+          // ostatecznie nic nie robimy
+        }
       }
     }
 
@@ -213,7 +269,15 @@ public class SignatureCipherManager {
                 cipherScriptUrl + " ( " + parseTokenScriptUrl(cipherScriptUrl) + " )");
           }
 
-          cipherKey = extractFromScript(EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8), cipherScriptUrl);
+            String scriptBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+            try {
+              cipherKey = extractFromScript(scriptBody, cipherScriptUrl);
+            } catch (ScriptExtractionException e) {
+              // Spróbuj fallbacków: jeśli konkretne nowe warianty mogłyby nie przejść, zaloguj rozszerzoną informację
+              log.warn("Primary extraction failed ({}). Attempting relaxed patterns...", e.getFailureType());
+              // (Na razie brak dodatkowych relaxed patterns – miejsce na przyszłe heurystyki)
+              throw e;
+            }
           cipherCache.put(cipherScriptUrl, cipherKey);
         }
       }
@@ -271,16 +335,41 @@ public class SignatureCipherManager {
       scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.DECIPHER_FUNCTION_NOT_FOUND);
     }
 
+    // Wybierz pierwszą funkcję, która nie jest identyczną (identity) – jeśli pierwsza była identity, szukaj dalej
+    String sigFunction = null;
+    sigFunctionMatcher.reset();
+    while (sigFunctionMatcher.find()) {
+      String candidate = sigFunctionMatcher.group(0);
+      if (!isIdentitySigFunction(candidate)) {
+        sigFunction = candidate;
+        break;
+      } else if (sigFunction == null) {
+        // zachowaj pierwszą (identity) tylko gdy nic lepszego nie znajdziemy
+        sigFunction = candidate;
+      }
+    }
+    if (sigFunction == null) {
+      scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.DECIPHER_FUNCTION_NOT_FOUND);
+    } else if (isIdentitySigFunction(sigFunction)) {
+      log.debug("Selected decipher function appears identity (may cause unchanged signature) for script {}", sourceUrl);
+    }
+
     Matcher nFunctionMatcher = N_FUNCTION_PATTERN.matcher(script);
 
     if (!nFunctionMatcher.find()) {
-      scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.N_FUNCTION_NOT_FOUND);
+      Matcher fallbackNMatcher = N_FUNCTION_FALLBACK_PATTERN.matcher(script);
+      if (fallbackNMatcher.find()) {
+        nFunctionMatcher = fallbackNMatcher;
+        log.debug("Using fallback N function pattern for script {}", sourceUrl);
+      } else {
+        scriptExtractionFailed(script, sourceUrl, ExtractionFailureType.N_FUNCTION_NOT_FOUND);
+      }
     }
 
     String timestamp = scriptTimestamp.group(2);
     String globalVars = globalVarsMatcher.group("code");
     String sigActions = sigActionsMatcher.group(0);
-    String sigFunction = sigFunctionMatcher.group(0);
+    // sigFunction już wybrane powyżej
     String nFunction = nFunctionMatcher.group(0);
 
     String nfParameterName = DataFormatTools.extractBetween(nFunction, "(", ")");
@@ -322,5 +411,22 @@ public class SignatureCipherManager {
       this.url = url;
       this.expireTimestampMs = System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1);
     }
+  }
+
+  private boolean isIdentitySigFunction(String fnSource) {
+    if (fnSource == null) return true;
+    int paren = fnSource.indexOf('(');
+    if (paren < 0) return false;
+    int close = fnSource.indexOf(')', paren + 1);
+    if (close < 0) return false;
+    String params = fnSource.substring(paren + 1, close).trim();
+    if (params.isEmpty()) return false;
+    String firstParam = params.split(",")[0].trim();
+    // Jeżeli zawiera split/join lub przypisanie do param – nie jest identity
+    if (fnSource.contains(firstParam + "=") || fnSource.contains(".split(\"\")") || fnSource.contains(".reverse(")) return false;
+    // Szukamy prostego return param;
+    Pattern simpleReturn = Pattern.compile("return\\s+" + Pattern.quote(firstParam) + "\\s*;?");
+    Matcher m = simpleReturn.matcher(fnSource);
+    return m.find();
   }
 }

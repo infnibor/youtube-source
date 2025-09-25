@@ -6,7 +6,6 @@ import com.sedmelluq.discord.lavaplayer.tools.Units;
 import com.sedmelluq.discord.lavaplayer.tools.io.HttpInterface;
 import dev.lavalink.youtube.CannotBeLoaded;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
-import dev.lavalink.youtube.cipher.SignatureCipherManager.CachedPlayerScript;
 import dev.lavalink.youtube.track.format.StreamFormat;
 import dev.lavalink.youtube.track.format.TrackFormats;
 import org.apache.http.entity.ContentType;
@@ -40,7 +39,6 @@ public abstract class ThumbnailStreamingNonMusicClient extends ThumbnailNonMusic
         JsonBrowser json = loadTrackInfoFromInnertube(source, httpInterface, videoId, null, true);
         JsonBrowser playabilityStatus = json.get("playabilityStatus");
         JsonBrowser videoDetails = json.get("videoDetails");
-        CachedPlayerScript playerScript = source.getCipherManager().getCachedPlayerScript(httpInterface);
 
         boolean isLive = videoDetails.get("isLive").asBoolean(false);
 
@@ -69,7 +67,8 @@ public abstract class ThumbnailStreamingNonMusicClient extends ThumbnailNonMusic
             log.warn("Loading formats either failed to load or were skipped due to missing fields, json: {}", streamingData.format());
         }
 
-        return new TrackFormats(formats, playerScript.url);
+        String playerScriptUrl = extractPlayerScriptUrl(json);
+        return new TrackFormats(formats, playerScriptUrl);
     }
 
     protected boolean extractFormat(@NotNull JsonBrowser formatJson,
@@ -117,5 +116,23 @@ public abstract class ThumbnailStreamingNonMusicClient extends ThumbnailNonMusic
             log.debug("Failed to parse format {}, skipping", formatJson, e);
             return false;
         }
+    }
+
+    /**
+     * Extracts the player script URL from the YouTube player response JSON.
+     * Tries to find 'jsUrl' or 'playerUrl' or similar fields.
+     */
+    protected String extractPlayerScriptUrl(JsonBrowser json) {
+        // Try common fields
+        String url = json.get("jsUrl").text();
+        if (!DataFormatTools.isNullOrEmpty(url)) return url;
+        url = json.get("playerUrl").text();
+        if (!DataFormatTools.isNullOrEmpty(url)) return url;
+        // Try nested fields if needed (e.g. assets.js)
+        url = json.get("assets").get("js").text();
+        if (!DataFormatTools.isNullOrEmpty(url)) return url;
+        // Not found
+        log.warn("Could not extract playerScriptUrl from YouTube player response JSON");
+        return "";
     }
 }

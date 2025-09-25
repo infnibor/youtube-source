@@ -116,7 +116,7 @@ public class YoutubeRestHandler {
 
             URI transformed = selectedFormat.getUrl();
             if (client.requirePlayerScript()) {
-                URI resolved = source.getCipherManager().resolveFormatUrl(httpInterface, formats.getPlayerScriptUrl(), selectedFormat);
+                URI resolved = source.getCipherManager().resolveFormatUrl(httpInterface, formats.getPlayerScriptUrl(), selectedFormat, videoId);
                 transformed = client.transformPlaybackUri(selectedFormat.getUrl(), resolved);
             }
 

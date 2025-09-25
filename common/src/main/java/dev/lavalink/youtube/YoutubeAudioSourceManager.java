@@ -137,7 +137,10 @@ public class YoutubeAudioSourceManager implements AudioSourceManager {
         this.allowDirectVideoIds = options.isAllowDirectVideoIds();
         this.allowDirectPlaylistIds = options.isAllowDirectPlaylistIds();
         this.clients = clients;
-        this.cipherManager = new SignatureCipherManager();
+        this.cipherManager = new SignatureCipherManager(
+            options.getCipherEndpoint(),
+            options.getCipherBearerToken()
+        );
         this.oauth2Handler = new YoutubeOauth2Handler(httpInterfaceManager);
 
         contextFilter = new YoutubeHttpContextFilter();

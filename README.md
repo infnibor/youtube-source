@@ -421,3 +421,44 @@ however we advise that you periodically check and keep your client list up to da
 ## Additional Support
 If you need additional help with using this source, that's not covered here or in any of the issues, 
 [join our Discord server](https://discord.gg/ZW4s47Ppw4).
+
+## External signature decryption integration (yt-cipher)
+
+From version X.X.X, all signature and n_param decryption logic is handled via an external API service (e.g. [yt-cipher](https://github.com/kikkia/yt-cipher)).
+
+### Requirements
+- Run the yt-cipher service as described in its documentation (e.g. using Docker).
+- Set the `API_BEARER_TOKEN` environment variable in the yt-cipher docker-compose.yml.
+- Make sure the endpoint is accessible (default: `http://localhost:8001/decrypt_signature`).
+
+### Configuration in code
+To use the external endpoint, set the options in `YoutubeSourceOptions`:
+
+```java
+YoutubeSourceOptions options = new YoutubeSourceOptions()
+    .setCipherEndpoint("http://localhost:8001/decrypt_signature") // or your endpoint
+    .setCipherBearerToken("your_secret_token");
+YoutubeAudioSourceManager sourceManager = new YoutubeAudioSourceManager(options, ...);
+```
+
+If you use the default constructor, the endpoint and token will be set to defaults (`localhost` and an empty token).
+
+### How does it work?
+- Every attempt to decrypt a signature or n_param will POST to the `/decrypt_signature` endpoint as described in the [yt-cipher API specification](https://github.com/kikkia/yt-cipher#api-specification).
+- The response from the service is automatically inserted into the playback URL.
+
+### Example API request
+```bash
+curl -X POST http://localhost:8001/decrypt_signature \
+-H "Content-Type: application/json" \
+-H "Authorization: Bearer your_secret_token" \
+-d '{
+  "encrypted_signature": "...",
+  "n_param": "...",
+  "player_url": "https://...",
+  "video_id": "..."
+}'
+```
+
+### Testing
+To test the integration, run the `SignatureCipherManagerTest` unit tests (requires a running endpoint and valid token).

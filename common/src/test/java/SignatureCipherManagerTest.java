@@ -21,6 +21,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class SignatureCipherManagerTest {
+    private static final String TEST_CIPHER_ENDPOINT = "http://localhost:8001/decrypt_signature";
+    private static final String TEST_BEARER_TOKEN = "your password";
+
     private TestCase[] scripts = new TestCase[]{
             new TestCase("https://www.youtube.com/s/player/4fcd6e4a/player_ias.vflset/en_US/base.js", "o_L251jm8yhZkWtBW", "lXoxI3XvToqn6A", "2aq0aqSyOoJXtK73m-uME_jv7-pT15gOFC02RFkGMqWpzEICs69VdbwQ0LDp1v7j8xx92efCJlYFYb1sUkkBSPOlPmXgIARw8JQ0qOAOAA", "wAOAOq0QJ8ARAIgXmPlOPSBkkUs1bYFYlJCfe29xx8q7v1pDL0QwbdV96sCIEzpWqMGkFR20CFOg51Tp-7vj_EMu-m37KtXJoOySqa0"),
             new TestCase("https://www.youtube.com/s/player/363db69b/player_ias.vflset/en_US/base.js", "eWYu5d5YeY_4LyEDc", "XJQqf-N7Xra3gg", "2aq0aqSyOoJXtK73m-uME_jv7-pT15gOFC02RFkGMqWpzEICs69VdbwQ0LDp1v7j8xx92efCJlYFYb1sUkkBSPOlPmXgIARw8JQ0qOAOAA", "0aqSyOoJXtK73m-uME_jv7-pT15gOFC02RFkGMqWpzEICs6EVdbwQ0LDp1v7j8xx92efCJlYFYb1sUkkBSPOlPmXgIARw8JQ0qOAOAA")
@@ -35,10 +38,13 @@ public class SignatureCipherManagerTest {
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpInterface httpInterface = new HttpInterface(httpClient, new HttpClientContext(), true, noOpFilter);
             for (TestCase test: scripts) {
-                SignatureCipherManager cipherManager = new SignatureCipherManager();
+                SignatureCipherManager cipherManager = new SignatureCipherManager(TEST_CIPHER_ENDPOINT, TEST_BEARER_TOKEN);
 
                 try {
-                    URI uri = cipherManager.resolveFormatUrl(httpInterface, test.uri, getTestStream(test));
+                    URI uri = cipherManager.resolveFormatUrl(httpInterface, test.uri, getTestStream(test), test.videoId);
+                    if (test == scripts[0]) {
+                        System.out.println("API returned URL: " + uri);
+                    }
 
                     Assertions.assertNotNull(uri);
                     // Assert that our N param is set
@@ -72,10 +78,11 @@ public class SignatureCipherManagerTest {
                 ""
             );
             
-            SignatureCipherManager cipherManager = new SignatureCipherManager();
+            SignatureCipherManager cipherManager = new SignatureCipherManager(TEST_CIPHER_ENDPOINT, TEST_BEARER_TOKEN);
 
             try {
-                URI uri = cipherManager.resolveFormatUrl(httpInterface, currentTest.uri, getTestStream(currentTest));
+                URI uri = cipherManager.resolveFormatUrl(httpInterface, currentTest.uri, getTestStream(currentTest), currentTest.videoId);
+                System.out.println("API returned URL: " + uri);
 
                 Assertions.assertNotNull(uri);
                 String uriString = uri.toString();
@@ -118,11 +125,12 @@ public class SignatureCipherManagerTest {
             
             for (TestCase test: scripts) {
                 System.out.println("Testing legacy script: " + test.uri);
-                SignatureCipherManager cipherManager = new SignatureCipherManager();
+                SignatureCipherManager cipherManager = new SignatureCipherManager(TEST_CIPHER_ENDPOINT, TEST_BEARER_TOKEN);
 
                 try {
                     // Use the same input parameters as the original test
-                    URI uri = cipherManager.resolveFormatUrl(httpInterface, test.uri, getTestStream(test));
+                    URI uri = cipherManager.resolveFormatUrl(httpInterface, test.uri, getTestStream(test), test.videoId);
+                    System.out.println("API returned URL: " + uri);
 
                     Assertions.assertNotNull(uri);
                     String uriString = uri.toString();
@@ -182,8 +190,8 @@ public class SignatureCipherManagerTest {
     public void testScriptCaching() throws IOException {
         try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
             HttpInterface httpInterface = new HttpInterface(httpClient, new HttpClientContext(), true, noOpFilter);
-            SignatureCipherManager cipherManager = new SignatureCipherManager();
-            
+            SignatureCipherManager cipherManager = new SignatureCipherManager(TEST_CIPHER_ENDPOINT, TEST_BEARER_TOKEN);
+
             // Get the current script URL
             String currentPlayerScriptUrl = fetchCurrentPlayerScriptUrl(httpInterface);
             TestCase currentTest = new TestCase(
@@ -197,13 +205,15 @@ public class SignatureCipherManagerTest {
             // First request - should hit network
             long startTime = System.nanoTime();
             URI uri1 = cipherManager.resolveFormatUrl(httpInterface, currentTest.uri, 
-                                                    getTestStream(currentTest));
+                                                    getTestStream(currentTest), currentTest.videoId);
+            System.out.println("API returned URL (first): " + uri1);
             long firstRequestTime = System.nanoTime() - startTime;
             
             // Second request - should use cache
             startTime = System.nanoTime();
             URI uri2 = cipherManager.resolveFormatUrl(httpInterface, currentTest.uri, 
-                                                    getTestStream(currentTest));
+                                                    getTestStream(currentTest), currentTest.videoId);
+            System.out.println("API returned URL (second): " + uri2);
             long secondRequestTime = System.nanoTime() - startTime;
             
             Assertions.assertNotNull(uri1);
@@ -314,6 +324,7 @@ public class SignatureCipherManagerTest {
         String expectedN;
         String signature;
         String expectedSig;
+        String videoId;
 
         public TestCase(String uri, String nParam, String expectedN, String signature, String expectedSig) {
             this.uri = uri;
@@ -321,6 +332,32 @@ public class SignatureCipherManagerTest {
             this.expectedN = expectedN;
             this.signature = signature;
             this.expectedSig = expectedSig;
+            this.videoId = ""; // Default empty, can be set if needed
+        }
+    }
+
+    /**
+     * Test integration with the cipher endpoint
+     */
+    @Test
+    public void testCipherEndpointIntegration() throws IOException {
+        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            HttpInterface httpInterface = new HttpInterface(httpClient, new HttpClientContext(), true, noOpFilter);
+            for (TestCase test: scripts) {
+                SignatureCipherManager cipherManager = new SignatureCipherManager(TEST_CIPHER_ENDPOINT, TEST_BEARER_TOKEN);
+                try {
+                    // Use test.uri as playerScript, test.signature as encrypted signature, test.nParam as n_param, test.videoId as videoId
+                    StreamFormat format = getTestStream(test);
+                    URI uri = cipherManager.resolveFormatUrl(httpInterface, test.uri, format, test.videoId);
+                    System.out.println("API returned URL: " + uri);
+                    Assertions.assertNotNull(uri);
+                    // Check if parameters are present in URL
+                    Assertions.assertTrue(uri.toString().contains("n="));
+                    Assertions.assertTrue(uri.toString().contains("sig=") || uri.toString().contains("signature="));
+                } catch (IOException | IllegalStateException e) {
+                    Assertions.fail("Failed to get or parse the cipher script: " + e.getMessage());
+                }
+            }
         }
     }
 }
